@@ -209,7 +209,15 @@ void setup()
 
 	//set up the backend components and feed them into the main DW3000 class
 	uart = new DWUart(115200);
-	port = new DW3000Port(&SPI, SPI_CS, DW_RST, DW_IRQ);
+	port = new DW3000Port(
+		&SPI,
+		SPI_CS,
+		DW_RST,
+		DW_IRQ,
+		false,
+		false,
+		SPISettings(8000000L, MSBFIRST, SPI_MODE0)
+	);
 	radio = new DW3000(uart, port);
 
 	//hard reset
@@ -279,7 +287,7 @@ void setup()
 
 //initiator, does not do the final calculations (I.E. tag)
 //loop_ds_init
-void loop() {
+void loop_ds_init() {
 
 
 	//start with clean slate
@@ -439,7 +447,7 @@ void loop() {
 
 //responder, makes the final calculations (I.E. anchor)
 //loop_ds_resp
-void loop_ds_resp() {
+void loop() {
 
 	//clean slate	
 	radio->clear_system_status();

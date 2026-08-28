@@ -1,3 +1,5 @@
+//DSTWR example code
+
 #include <Arduino.h>
 #include "constants.h"
 #include "dw3000.h"
@@ -10,10 +12,6 @@
 //we need to calibrate the board in order to get these
 #define RX_ANT_DELAY 16385
 #define TX_ANT_DELAY 16385
-
-//it's up to the MC to accept or reject packets based on this.
-#define RESPONDER_MAC 0x1122334455667788
-#define SOURCE_MAC 0x8877887788778877
 
 
 DWUart* uart = nullptr;
@@ -55,7 +53,6 @@ dwt_txconfig_t txconfig_ch9 =
 
 bool flip = false;
 
-
 /////////////////////helper functions
 
 //platform specific code, this will need to be changed for non-NRF devices!
@@ -71,9 +68,9 @@ uint64_t get_uuid() {
 }
 
 //prints a u64, since the arduino IDE's serial.print doesn't handle this
-void print_u64(uint64_t value) {
-	Serial.print((uint32_t)(value >> 32));
-	Serial.print((uint32_t)(value & 0xFFFFFFFF));
+void print_u64(uint64_t value, int base) {
+	Serial.print((uint32_t)(value >> 32), base);
+	Serial.print((uint32_t)(value & 0xFFFFFFFF), base);
 }
 
 //writes a UWBPacket out to the radio and waits for it to respond with the send status
@@ -89,26 +86,31 @@ bool send_packet(UWBPacket& packet, uint8_t mode) {
 	//start TX mode
 	int first_send_error = radio->dwt_starttx(mode);
 
+	//happens if the delayed time has passed, it puts the radio into off mode
 	if(first_send_error != DWT_SUCCESS) {
-		Serial.print("Delay send error: ");
-		Serial.println(first_send_error);
+		//Serial.print("Delay send error: ");
+		//Serial.println(first_send_error);
 		return false;
 	}
 
 	//check for a successful transmit with timeout
 	bool send_error = true;
-	for(int i = 0; i < 50; ++i) {
+	//for(int i = 0; i < 50; ++i) {
+	pinMode(14, OUTPUT);
+	digitalWrite(14, false);
+	while(1) {
 		if(radio->check_frame_tx_success()) {
 			send_error = false;
 			break;
 		}
 	}
+	digitalWrite(14, true);
 
 	//had problem sending packet, reset radio status and return
 	if(send_error) {
 		radio->clear_system_status();
 		radio->dwt_writefastCMD(CMD_TXRXOFF);
-		Serial.println("Send Error");
+		//Serial.println("Send Error");
 		return false;
 	}
 
@@ -173,9 +175,22 @@ int wait_for_message_with_timeout(uint32_t timeout_ms, bool no_timeout = false) 
 }
 
 
+//a universal collection of timing values
+//to be stored in a vector and eventually transmitted out to all anchors that sent a response initially
+//also held by the anchor for each tag it needs to reply to
+typedef struct ResponderHolder {
+	uint64_t mac; //mac address of the device we got the packet from
+	uint64_t rx_timestamp_radio; //radio timestamp when we got the packet
+
+	//these are only used by the anchor
+	uint64_t tx_timestamp_radio; //radio timestamp when we will send the packet out in the future (used by the anchor only, see tx_timestamp_mcu_micros)
+	uint64_t rx_timestamp_mcu_micros; //microcontroller timestamp when it got the packet (used by the anchor only)
+	uint64_t tx_timestamp_mcu_micros; //microcontroller timestamp when it should send the packet (used by the anchor only)
+	bool sent_reply; //true if we sent the packet back at the time: tx_timestamp_mcu_micros
+} ResponderHolder;
 
 
-
+////////////////////main methods
 
 void setup()
 {
@@ -263,22 +278,19 @@ void setup()
 
 //initiator, does not do the final calculations
 //loop_ds_init
-void loop() {
+void loop_ds_init() {
 
 
 	//start with clean slate
 	radio->clear_system_status();
 	radio->dwt_writefastCMD(CMD_TXRXOFF);
 
-	//make starting packet to send (doesn't have to be a TWR packet to start with)
-	auto payload = "p0";
-	UWBPacket packet = UWBPacket(
-		get_uuid(), //this device's mac
-		UWBPacket::BROADCAST_MAC,
-		PacketType::Ok,
-		(const uint8_t*)payload,
-		sizeof(payload)
-	);
+	//make starting packet to send (doesn't have to be a TWR packet to start with, but I'll do it anyway out of convention)
+	RangingPacket request_frame = RangingPacket(0, 0, RangingFrameNum::Request);
+	UWBPacket packet = UWBPacket(get_uuid(), UWBPacket::BROADCAST_MAC, PacketType::Ranging, request_frame.get_compiled(), request_frame.get_compiled_len());
+
+
+
 
 	if(!send_packet(packet, DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED)) {
 		//failed to send, restart loop
@@ -317,8 +329,8 @@ void loop() {
 	uint64_t reply_2_time = tx_timestamp - rx_timestamp;
 
 	//write packet
-	RangingPacket range_p = RangingPacket(reply_2_time, round_1_time, 0);
-	UWBPacket outgoing = UWBPacket(SOURCE_MAC, RESPONDER_MAC, PacketType::Ranging, range_p.get_compiled(), range_p.get_compiled_len());
+	RangingPacket range_p = RangingPacket(reply_2_time, round_1_time, RangingFrameNum::Final);
+	UWBPacket outgoing = UWBPacket(get_uuid(), UWBPacket::BROADCAST_MAC, PacketType::Ranging, range_p.get_compiled(), range_p.get_compiled_len());
 
 	//send with delay
 	if (!send_packet(outgoing, DWT_START_TX_DELAYED)) {
@@ -343,7 +355,7 @@ void loop() {
 
 //responder, makes the final calculations
 //loop_ds_resp
-void loop_ds_resp() {
+void loop() {
 
 	//clean slate
 	radio->clear_system_status();
@@ -378,13 +390,13 @@ void loop_ds_resp() {
 
 	//write packet (content does not matter; the other radio will keep track of its own times)
 	{
-		auto payload = "abc";
+		auto payload = RangingPacket(0, 0, RangingFrameNum::Response);
 		UWBPacket packet = UWBPacket(
-			RESPONDER_MAC, //this device's mac
-			SOURCE_MAC,
-			PacketType::Ok,
-			(const uint8_t*)payload,
-			sizeof(payload)
+			get_uuid(), //this device's mac
+			UWBPacket::BROADCAST_MAC,
+			PacketType::Ranging,
+			payload.get_compiled(),
+			payload.get_compiled_len()
 		);
 
 		if(!send_packet(packet, DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED)) {
@@ -413,32 +425,38 @@ void loop_ds_resp() {
 
 	switch(response_packet.get_packet_type()) {
 		case PacketType::Ranging: {
-			uint64_t round_2_time = radio->get_rx_timestamp_u64() - tx_timestamp;
 
 			auto ranging_data = RangingPacket(response_packet.get_payload());
 
-			uint64_t round_1_time = ranging_data.get_round_time();
-			uint64_t reply_2_time = ranging_data.get_reply_time();
+			//is the final frame, we can calculate distance with this.
+			if(ranging_data.get_frame_no() == RangingFrameNum::Final) {
+				uint64_t round_2_time = radio->get_rx_timestamp_u64() - tx_timestamp;
 
-			//see page 249
-			double top_val = ((double)round_1_time * (double)round_2_time) - ((double)reply_1_time * (double)reply_2_time);
-			double bottom_val = ((double)round_1_time + (double)round_2_time + (double)reply_1_time + (double)reply_2_time);
 
-			double time_of_flight = ((double)top_val)/((double)bottom_val);
-			double distance = time_of_flight * SPEED_OF_LIGHT * DWT_TIME_UNITS;
+				uint64_t round_1_time = ranging_data.get_round_time();
+				uint64_t reply_2_time = ranging_data.get_reply_time();
 
-			// Serial.print("Rounds: ");
-			// print_u64(round_1_time);
-			// Serial.print(" ");
-			// print_u64(round_2_time);
-			// Serial.print(" Replies: ");
-			// print_u64(reply_1_time);
-			// Serial.print(" ");
-			// print_u64(reply_2_time);
-			// Serial.print(" ");
+				//see page 249
+				double top_val = ((double)round_1_time * (double)round_2_time) - ((double)reply_1_time * (double)reply_2_time);
+				double bottom_val = ((double)round_1_time + (double)round_2_time + (double)reply_1_time + (double)reply_2_time);
 
-			Serial.print("Distance: ");		
-			Serial.println(distance);
+				double time_of_flight = ((double)top_val)/((double)bottom_val);
+				double distance = time_of_flight * SPEED_OF_LIGHT * DWT_TIME_UNITS;
+
+				// Serial.print("Rounds: ");
+				// print_u64(round_1_time, HEX);
+				// Serial.print(" ");
+				// print_u64(round_2_time, HEX);
+				// Serial.print(" Replies: ");
+				// print_u64(reply_1_time, HEX);
+				// Serial.print(" ");
+				// print_u64(reply_2_time, HEX);
+				// Serial.print(" ");
+
+				Serial.print("Distance: ");		
+				Serial.println(distance);
+			}
+
 
 			break;
 		}

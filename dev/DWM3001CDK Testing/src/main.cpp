@@ -1,4 +1,5 @@
-#include <vector>
+//DSTWR example code
+
 #include <Arduino.h>
 #include "constants.h"
 #include "dw3000.h"
@@ -6,6 +7,27 @@
 #include "dw3000_shared_defines.h"
 #include "SPI.h"
 #include "packet.h"
+
+
+/*
+MuLOC / Phase angle paper notes:
+(see: https://github.com/MULoc/MULoc)
+
+
+Looks like the main extra thing that the in-between payload includes is the CIR value from the radio
+
+This is what comes out of the program before it goes into matlab for the more complex calculations
+%data format for an anchor, there are 3 per row, which are the other three anchors
+%[CIR real (signed int)]    [CIR IM (signed int)]    [phase calib]    [rx preamble]    [gain]    [Time-of-flight]    [the ID of the anchor we were talking to]
+%039d,                      0342,                    7f,              1f,              0019,     3534c61dc9,         1
+
+%data format for a tag, there are 4 per row, which are all four other anchors
+%[CIR real (signed int)]    [CIR IM (signed int)]    [phase calib]    [rx preamble]    [gain]    [Time-of-flight]    [carrier frequency offset]    [the ID of the anchor we were talking to]
+%0389,                      f6f9,                    01,              3b,              01a1,     93412952a4,         00000064,                     0
+
+
+
+*/
 
 
 //we need to calibrate the board in order to get these
@@ -51,7 +73,6 @@ dwt_txconfig_t txconfig_ch9 =
 
 
 bool flip = false;
-bool flop = false;
 
 /////////////////////helper functions
 
@@ -195,7 +216,6 @@ typedef struct ResponderHolder {
 void setup()
 {
 
-
 	// sets up the device to use the pins on the bottom left of the rPi header for serial communication.
 	Serial = Uart(NRF_UART0, UARTE0_UART0_IRQn, 31, 7);
 	Serial.begin(115200);
@@ -277,435 +297,204 @@ void setup()
 
 }
 
-//initiator, does not do the final calculations (I.E. tag)
+//initiator, does not do the final calculations
 //loop_ds_init
-void loop() {
+void loop_ds_init() {
 
 
 	//start with clean slate
 	radio->clear_system_status();
 	radio->dwt_writefastCMD(CMD_TXRXOFF);
 
-	radio->gpio_set(2, true);
+	//make starting packet to send (doesn't have to be a TWR packet to start with, but I'll do it anyway out of convention)
+	RangingPacket request_frame = RangingPacket(0, 0, RangingFrameNum::Request);
+	UWBPacket packet = UWBPacket(get_uuid(), UWBPacket::BROADCAST_MAC, PacketType::Ranging, request_frame.get_compiled(), request_frame.get_compiled_len());
 
-	//send a frame 0 to everyone
-	{
-		//make starting packet to send (doesn't have to be a TWR packet to start with)
-		auto payload = RangingPacket(0, 0, RangingFrameNum::Request);
-		UWBPacket packet = UWBPacket(
-			get_uuid(), //this device's mac
-			UWBPacket::BROADCAST_MAC, //send to everyone
-			PacketType::Ranging,
-			payload.get_compiled(),
-			payload.get_compiled_len()
-		);
 
-		if(!send_packet(packet, DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED)) {
-			//failed to send, restart loop
-			Serial.println("Failed to send initial packet.");
-			delay(1000);
-			return;
-		}
+
+
+	if(!send_packet(packet, DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED)) {
+		//failed to send, restart loop
+		Serial.println("Failed to send initial packet.");
+		delay(1000);
+		return;
 	}
 
-	uint64_t starting_time = micros();
-
-
-	std::vector<ResponderHolder> responses = {};
-
-	//allow and respond to new packets for X seconds before cutting them off and sending out another frame 0
-	uint32_t reception_start = millis();
-	while(millis() - reception_start < 100) {
-
-		auto response = radio->check_for_rx();
-		
-
-		if(response == 1) {
-			//got a good packet, log it
-
-			//parse the packet to get the timestamps from the other radio
-			UWBPacket response_packet = get_packet();
-
-			//if it's destined for us (ignoring broadcast addresses, since those will only come from tags)
-			if(response_packet.get_dest_uuid() == get_uuid()) {
-
-				//checking that the packet is a ranging packet and that it's a frame 1 is not strictly needed, but if we want to do it, we do it here.
-				//...
-
-				//add to our list of radios to reply to
-				ResponderHolder aa = {};
-				aa.mac = response_packet.get_source_uuid();
-				aa.rx_timestamp_radio = radio->get_rx_timestamp_u64();
-				responses.push_back(aa);
-
-			}		
-
-		}
-		
-		//go back to listening
-		if(response) {
-			//even if it's not successful, it will still put the radio in idle mode, so re-enable listening mode is needed
-			radio->clear_system_status();
-			radio->dwt_writefastCMD(CMD_RX);
-		}
-
-
+	//wait for RX
+	auto rx_status = wait_for_message_with_timeout(1000);
+	if(rx_status) {
+		Serial.print("RX Error: ");
+		Serial.println(rx_status);
+		return;
 	}
 
 
+	//parse the packet to get the timestamps from the other radio
+	UWBPacket response_packet = get_packet();
 
-	//should now have a list of responses we need to give a final reply to
-	size_t responses_size = responses.size();
-	if(responses.size() > 0) {
+	//timestamp when the initial packet was sent by us
+	uint64_t initial_tx_timestamp = radio->get_tx_timestamp_u64();
 
-		//prep radio to transmit
-		radio->clear_system_status();
-		radio->dwt_writefastCMD(CMD_TXRXOFF);
+	//timestamp when the response was got by us
+	uint64_t rx_timestamp = radio->get_rx_timestamp_u64();
 
-		//time when we sent it initially
-		uint64_t first_tx_time = radio->get_tx_timestamp_u64();
+	//full round trip 
+	uint64_t round_1_time = rx_timestamp - initial_tx_timestamp;
+	
 
+	//calculate and populate outgoing time (see above for a breakdown)
+	uint32_t turnaround_time_us = 1000;
+	uint64_t tx_timestamp = ((turnaround_time_us * UUS_TO_DWT_TIME + rx_timestamp) >> 8) & 0xFFFFFFFEUL;
+	radio->dwt_setdelayedtrxtime((uint32_t)tx_timestamp);
+	tx_timestamp = (tx_timestamp << 8) + TX_ANT_DELAY;
+	uint64_t reply_2_time = tx_timestamp - rx_timestamp;
 
-		//the time it took from sending out the first packet to sending out the next one
-		uint64_t waited_time = micros() - starting_time;
-		//plus some extra because formatting the outgoing packet will also take some extra time
-		uint64_t extra_turnaround_time_us = 5000;
-		uint64_t turnaround_time = waited_time + extra_turnaround_time_us;
+	//write packet
+	RangingPacket range_p = RangingPacket(reply_2_time, round_1_time, RangingFrameNum::Final);
+	UWBPacket outgoing = UWBPacket(get_uuid(), UWBPacket::BROADCAST_MAC, PacketType::Ranging, range_p.get_compiled(), range_p.get_compiled_len());
 
-		uint64_t curr_time = radio->get_sys_timestamp_u64();
-
-
-		//calculate everything in radio units, this is the future time when we send it out
-		uint64_t tx_timestamp = ((turnaround_time * UUS_TO_DWT_TIME + first_tx_time) >> 8) & 0xFFFFFFFEUL;
-		radio->dwt_setdelayedtrxtime((uint32_t)tx_timestamp);
-		tx_timestamp = (tx_timestamp << 8) + TX_ANT_DELAY;
-
-		
-		MultiRangingPacket c_ranging = MultiRangingPacket();
-		//add all items in the list to the MultiRangingPacket
-		for(size_t i = 0; i < responses_size; ++i) {
-
-			auto single_resp = responses[i];
-
-			uint64_t round_time = single_resp.rx_timestamp_radio - first_tx_time;
-			uint64_t reply_time = tx_timestamp - single_resp.rx_timestamp_radio;
-
-			RangingPacket replyP = RangingPacket(reply_time, round_time, RangingFrameNum::Final);
-
-			//push back, check for out-of room (if we are out of room, then it doesn't matter, we'll just skip the rest since we should have enough anchors to get a good datapoint)
-			if(!c_ranging.add_packet(replyP, single_resp.mac)) {
-				break;
-			}
-
-		}
-			
-
-		//MultiRangingPacket is now formatted, append to a UWBPacket
-		UWBPacket outgoing = UWBPacket(get_uuid(), UWBPacket::BROADCAST_MAC, PacketType::MultiRanging, c_ranging.get_compiled(), c_ranging.get_compiled_len());
-		
-
-		//UWBPacket test = UWBPacket();
-
-
-		//send with delay
-		if (!send_packet(outgoing, DWT_START_TX_DELAYED)) {
-			uint64_t tock = micros() - (waited_time + starting_time);
-			uint64_t curr_time2 = radio->get_sys_timestamp_u64();
-			//Serial.println("Send result not successful");
-		} else {
-			//Serial.println("Sent ranging response");
-			
-			uint64_t tock = micros() - (waited_time + starting_time);
-			//debug: flip LED
-			flip = !flip;		
-			radio->gpio_set(3, !flip);
-		}
-		
-
+	//send with delay
+	if (!send_packet(outgoing, DWT_START_TX_DELAYED)) {
+		Serial.println("Send result not successful");
+		return;
 	}
 
+	Serial.println("Sent ranging response");
 
-	radio->gpio_set(2, false);
 
-	//wait for next time, with random spacing to avoid synching to another tag
-	delay(500 + random(100));
+	//debug: flip LED
+	flip = !flip;
+	radio->gpio_set(2, flip);
+	radio->gpio_set(3, !flip);
+
+	delay(200);
 
 
 
 
 }
 
-
-
-//responder, makes the final calculations (I.E. anchor)
+//responder, makes the final calculations
 //loop_ds_resp
-void loop_ds_resp() {
+void loop() {
 
-	//clean slate	
+	//clean slate
 	radio->clear_system_status();
 	radio->dwt_writefastCMD(CMD_TXRXOFF);
 
 	//start listening
 	radio->dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
+	//wait for initial message
+	int result = wait_for_message_with_timeout(0, true);
 
-	std::vector<ResponderHolder> responses = {};
-	auto last_millis = millis();
-
-	//wait for a broadcast frame0 message
-	while(1) {
-
-
-		auto response = radio->check_for_rx();
-
-		//got something
-		if(response == 1) {
-
-			//ensure radio is in IDLE state (it should be, just making sure)
-			radio->dwt_writefastCMD(CMD_TXRXOFF);
-			radio->clear_system_status();
-			
-			//parse the packet to get the timestamps from the other radio
-			UWBPacket response_packet = get_packet();
-
-			//if it's destined for us (mainly broadcast messages; the tags only send those out)
-			auto uuid = response_packet.get_dest_uuid();
-			if(uuid == UWBPacket::BROADCAST_MAC || uuid == get_uuid()) {
-
-				switch(response_packet.get_packet_type()) {
-
-					//initial response
-					case PacketType::Ranging: {
-
-						flip = !flip;
-						radio->gpio_set(2, flip);
-
-						ResponderHolder aa;// = ResponderHolder {
-						aa.mac = response_packet.get_source_uuid(); //source mac
-						aa.rx_timestamp_radio = radio->get_rx_timestamp_u64(); //radio arrival time
-						aa.tx_timestamp_radio = 0; //radio departure time (will be set later)
-						aa.rx_timestamp_mcu_micros = micros(); //time on the MCU when we got the packet in, used for turnaround time when we send this response back,
-						aa.tx_timestamp_mcu_micros = aa.rx_timestamp_mcu_micros + random(10000); //time when we will send the packet out, shuffled to avoid collisions
-						aa.sent_reply = false;
-
-						//check if packet from this MAC address already exists, then override it if it does
-						bool found_existing = false;
-						for(size_t i = 0; i < responses.size(); ++i) {
-							if(responses[i].mac == aa.mac) {
-								//copy over to existing entry
-								responses[i] = aa;
-								found_existing = true;
-								break;
-							}
-						} 
-						//otherwise add it
-						if(!found_existing) {
-							responses.push_back(aa);
-						}
+	//failed to properly get packet
+	if(result) {
+		Serial.print("Error getting packet: ");
+		Serial.println(result);
+		return;
+	}
 
 
-
-						break;
-					}
-					//final response
-					case PacketType::MultiRanging: {
-
-						flop = !flop;
-						radio->gpio_set(3, flop);
+	//we don't need to parse the packet, but if we did, that happens here.
 
 
-						//check if our MAC is in there
-						MultiRangingPacket multi = MultiRangingPacket(response_packet.get_payload(), response_packet.get_payload_len());
+	//the time we got the packet
+	auto rx_timestamp = radio->get_rx_timestamp_u64();
+	//calculate and populate outgoing time (see above for a breakdown)
+	uint32_t turnaround_time_us = 1000;
+	uint64_t tx_timestamp = ((turnaround_time_us * UUS_TO_DWT_TIME + rx_timestamp) >> 8) & 0xFFFFFFFEUL;
+	radio->dwt_setdelayedtrxtime((uint32_t)tx_timestamp);
+	tx_timestamp = (tx_timestamp << 8) + TX_ANT_DELAY;
+	uint64_t reply_1_time = tx_timestamp - rx_timestamp;
 
 
-						//check all packets in the ranging packet to see if one was addressed to us
-						for(int i = 0; i < multi.get_packet_count(); ++i) {
+	//write packet (content does not matter; the other radio will keep track of its own times)
+	{
+		auto payload = RangingPacket(0, 0, RangingFrameNum::Response);
+		UWBPacket packet = UWBPacket(
+			get_uuid(), //this device's mac
+			UWBPacket::BROADCAST_MAC,
+			PacketType::Ranging,
+			payload.get_compiled(),
+			payload.get_compiled_len()
+		);
 
-							//is addressed to us
-							auto mac = multi.get_mac_at(i);
-							if(mac == get_uuid()) {
-
-								//find the ResponseHandler that corresponds to this mac (if it exists. It should)
-								size_t j = 0;
-								size_t resp_size = responses.size();
-								bool found = false;
-								for(;j < resp_size; ++j) {
-									if(responses[j].sent_reply == true && responses[j].mac == response_packet.get_source_uuid()) {
-
-
-										RangingPacket a = multi.get_packet_at(i);
-										//note: we have an issue where we occasionally get something like FFFFFF077204D1FD from get_reply_time() (instead of the intended 077204D1FD...)										
-										//we also get these from the other calculations. The reason is because of byte overflow issues. Masking out the upper 3 bytes solves this problem
-										auto reply_2_time = a.get_reply_time();
-										auto round_1_time = a.get_round_time();
-
-										uint64_t reply_1_time = (responses[j].tx_timestamp_radio - responses[j].rx_timestamp_radio) & 0xFFFFFFFFFF;
-										uint64_t round_2_time = (radio->get_rx_timestamp_u64() - responses[j].tx_timestamp_radio) & 0xFFFFFFFFFF;
-
-										// if((int64_t)round_2_time < -1) {
-										// 	uint64_t rr = radio->get_rx_timestamp_u64();
-										// 	uint32_t apple = 3;
-										// 	apple += 1;
-										// }
-
-										//see page 249
-										double top_val = ((double)round_1_time * (double)round_2_time) - ((double)reply_1_time * (double)reply_2_time);
-										double bottom_val = ((double)round_1_time + (double)round_2_time + (double)reply_1_time + (double)reply_2_time);
-
-										double time_of_flight = ((double)top_val)/((double)bottom_val);
-										double distance = time_of_flight * SPEED_OF_LIGHT * DWT_TIME_UNITS;
-										
-										if(0) {
-											Serial.print("Cycle 1: ");
-											print_u64(round_1_time, HEX);
-											Serial.print(" ");
-											print_u64(reply_1_time, HEX);
-											Serial.print(" Cycle 2: ");
-											print_u64(round_2_time, HEX);
-											Serial.print(" ");
-											print_u64(reply_2_time, HEX);
-											Serial.print(" Diffs: ");
-											print_u64(round_1_time - reply_1_time, HEX);
-											Serial.print(" ");
-											print_u64(round_2_time - reply_2_time, HEX);
-
-											Serial.print(" Round 2 values: ");
-											print_u64(responses[j].tx_timestamp_radio, HEX);
-											Serial.print(" ");
-											print_u64(radio->get_rx_timestamp_u64(), HEX);
-
-											Serial.print(" ");
-											Serial.print(resp_size);
-										}
-
-										Serial.print("MAC: ");
-										print_u64(response_packet.get_source_uuid(), HEX);
-										Serial.print(" Distance: ");
-										Serial.println(distance);
-
-
-
-										//found the cached response, no need to check anymore
-										found = true;
-										break;
-									}									
-								}
-
-								//erase the entry that we found the distance of
-								if(found) {
-									responses.erase(responses.begin() + j);
-								}
-
-
-								//found the packet, no need to check any more
-								break;
-
-							}
-
-						}
-
-						//Serial.print("Multi-Packet count: ");
-						//Serial.println(multi.get_packet_count());
-
-						break;
-					}
-					default: {
-						Serial.print("Other packet type");
-						break;
-					}
-				}
-
-
-			}
-
-
-
-
+		if(!send_packet(packet, DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED)) {
+			Serial.println("Send result not successful");
+			return;
 		}
-		
-
-		//go back to listening
-		if(response) {
-			//even if it's not successful, it will still put the radio in idle mode, so re-enable listening mode is needed
-			radio->clear_system_status();
-			radio->dwt_writefastCMD(CMD_RX);
-
-		}
-
-
-		//check to send a packet
-		if(last_millis != millis()) {
-			last_millis = millis();
-
-			auto micros_now = micros();
-
-			//iterate through all the queued packets to see if there are any ready to go out
-			//int prune_idx = -1;
-			std::vector<size_t> prune_idx = {};
-
-			for(size_t i = 0; i < responses.size(); ++i) {
-
-				//waited long enough, it's time to send a packet (note: this is not overflow safe!)
-				if(responses[i].tx_timestamp_mcu_micros <= micros_now && responses[i].sent_reply == false) {
-
-
-					//prep radio to transmit
-					radio->clear_system_status();
-					radio->dwt_writefastCMD(CMD_TXRXOFF);
-
-
-					ResponderHolder& rhold = responses[i];
-
-					auto waited_time = micros_now - rhold.rx_timestamp_mcu_micros;
-					uint64_t extra_turnaround_time_us = 4000;
-					uint64_t turnaround_time = waited_time + extra_turnaround_time_us;
-
-					//calculate everything in radio units, this is the future time when we send it out
-					uint64_t tx_timestamp = ((turnaround_time * UUS_TO_DWT_TIME + rhold.rx_timestamp_radio) >> 8) & 0xFFFFFFFEUL;
-					radio->dwt_setdelayedtrxtime((uint32_t)tx_timestamp);
-					tx_timestamp = (tx_timestamp << 8) + TX_ANT_DELAY;
-
-					//send back to anchor
-					RangingPacket response_p = RangingPacket(0, 0, RangingFrameNum::Response);
-					UWBPacket outgoing = UWBPacket(get_uuid(), rhold.mac, PacketType::Ranging, response_p.get_compiled(), response_p.get_compiled_len());
-					
-					rhold.tx_timestamp_radio = tx_timestamp;
-					rhold.sent_reply = true;
-
-					if (!send_packet(outgoing, DWT_START_TX_DELAYED)) {
-						//Serial.println("Send result not successful");
-						//return;
-					}
-
-					radio->clear_system_status();
-
-				}
-
-
-				//packets older than 5 seconds get pruned
-				if(responses[i].tx_timestamp_mcu_micros <= micros_now - 5000000) {
-					prune_idx.push_back(i);
-				}
-
-			}
-			
-			//remove the marked items
-			auto prunables = prune_idx.size();
-			if(prunables > 0) {
-				for(size_t i = 0; i < prunables; ++i) {
-					responses.erase(responses.begin() + prune_idx[i]);
-				}
-			}
-
-			//go back to listening again
-			radio->dwt_rxenable(DWT_START_RX_IMMEDIATE);
-
-		}
-
-
 
 	}
 
+	//Serial.println("Got initial packet and sent response.");
+	radio->clear_system_status();
+
+
+	//wait for RX
+	auto rx_status = wait_for_message_with_timeout(1000);
+	if(rx_status) {
+		Serial.print("RX Error: ");
+		Serial.println(rx_status);
+		return;
+	}
+
+
+	//parse the packet to get the timestamps from the other radio
+	UWBPacket response_packet = get_packet();
+
+
+	switch(response_packet.get_packet_type()) {
+		case PacketType::Ranging: {
+
+			auto ranging_data = RangingPacket(response_packet.get_payload());
+
+			//is the final frame, we can calculate distance with this.
+			if(ranging_data.get_frame_no() == RangingFrameNum::Final) {
+				uint64_t round_2_time = radio->get_rx_timestamp_u64() - tx_timestamp;
+
+
+				uint64_t round_1_time = ranging_data.get_round_time();
+				uint64_t reply_2_time = ranging_data.get_reply_time();
+
+				//see page 249
+				double top_val = ((double)round_1_time * (double)round_2_time) - ((double)reply_1_time * (double)reply_2_time);
+				double bottom_val = ((double)round_1_time + (double)round_2_time + (double)reply_1_time + (double)reply_2_time);
+
+				double time_of_flight = ((double)top_val)/((double)bottom_val);
+				double distance = time_of_flight * SPEED_OF_LIGHT * DWT_TIME_UNITS;
+
+				// Serial.print("Rounds: ");
+				// print_u64(round_1_time, HEX);
+				// Serial.print(" ");
+				// print_u64(round_2_time, HEX);
+				// Serial.print(" Replies: ");
+				// print_u64(reply_1_time, HEX);
+				// Serial.print(" ");
+				// print_u64(reply_2_time, HEX);
+				// Serial.print(" ");
+
+				Serial.print("Distance: ");		
+				Serial.println(distance);
+			}
+
+
+			break;
+		}
+		default: {
+			Serial.print("Wrong RX Packet type. Expected Ranging packet ");
+			Serial.println(response_packet.get_packet_type());
+
+			if(response_packet.get_packet_type() == 0) {
+				//debug: flip LED
+				flip = !flip;
+				radio->gpio_set(2, flip);
+				radio->gpio_set(3, !flip);
+			}
+
+			return;
+		}
+	}
 
 
 }

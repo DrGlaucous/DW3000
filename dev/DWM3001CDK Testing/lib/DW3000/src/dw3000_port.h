@@ -198,7 +198,10 @@ public:
 		uint8_t reset = 27,
 		uint8_t interrupt_req = 34,
 		bool interrupt_enabled = false,
-		bool debounce_clk_enabled = false): 
+		bool debounce_clk_enabled = false,
+		SPISettings fast_spi = SPISettings(8000000L, MSBFIRST, SPI_MODE0),
+		SPISettings slow_spi = SPISettings(2000000L, MSBFIRST, SPI_MODE0)
+	): 
 
 		spiInterface(spi_in),
 		_ss(chip_select),
@@ -207,8 +210,8 @@ public:
 		_irq_enabled(interrupt_enabled),
 		_debounceClockEnabled(debounce_clk_enabled)
 	{
-		_fastSPI = SPISettings(8000000L, MSBFIRST, SPI_MODE0);
-		_slowSPI = SPISettings(2000000L, MSBFIRST, SPI_MODE0);
+		_fastSPI = fast_spi;
+		_slowSPI = slow_spi;
 		_currentSPI = &_fastSPI;
 
 		reselect(_ss);
