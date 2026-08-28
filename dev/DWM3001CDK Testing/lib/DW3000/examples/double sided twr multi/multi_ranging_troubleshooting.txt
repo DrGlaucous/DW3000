@@ -1,0 +1,123 @@
+//anchor UUID:
+0xcce53ce39d33a10a
+
+
+Rounds: 0FB33691 7720689F9 Replies: 0FB337FF 77205CF6F Distance: 0.06<\r><\n>
+//bad round here
+Rounds: 01066A02C FFFFFF1DED0D2ED6 Replies: 0FEEB33E 7715265D4 Distance: 1290603.90<\r><\n>
+
+//bad reply here (-1067561159772)
+Rounds: 011548C5C 1DEE1D5E89 Replies: 0F95F7DA FFFFFF07706573A4 Distance: -1226465.24<\r><\n>
+
+
+Rounds: 0F950627 1DEF859D23 Replies: 01065A649 77224F9D9 Distance: 722513.00<\r><\n>
+Rounds: 0F77BF83 1DEFCD98F8 Replies: 010669EC4 77242407D Distance: 715270.26<\r><\n
+
+
+0x4fc77e765 - 0xfd8b5e7001
+
+//reply 1 and round 1 should be ~equal
+//reply 2 and round 2 should be ~equal
+
+
+//always seems to be a bad round2 or reply2
+
+
+Rounds: 0FB33691 7720689F9 Replies: 0FB337FF 77205CF6F Distance: 0.06<\r><\n>
+
+Rounds: 0134D9AA9 76E6CFDA1 Replies: 0134D93EC 76E6C6557 Distance: 4.92<\r><\n>
+Rounds: 0F94FF40 77225B114 Replies: 0F94FE29 7722500C0 Distance: 1.51<\r><\n>
+
+
+
+
+Rounds: 01065A3BD 771550D0D Replies: 01065A521 771545C43 Distance: 0.08<\r><\n>
+Rounds: 0113551E7 770855C15 Replies: 011355357 77084AE19 Distance: 0.08<\r><\n>
+Rounds: 0F77BE98 77241F44F Replies: 0F77BFEB 772414768 Distance: 0.05<\r><\n>
+Rounds: 010DD9223 770DC1FCF Replies: 010DD9391 770DB73DD Distance: 0.06<\r><\n>
+Rounds: 010A11E11 771189342 Replies: 010A11F72 77117E7EF Distance: 0.07<\r><\n>
+Rounds: 011900048 7702AB64D Replies: 01190002F 77029FFB8 Distance: 1.06<\r><\n>
+Rounds: 0F94FF40 77225B114 Replies: 0F94FE29 7722500C0 Distance: 1.51<\r><\n>
+Rounds: 01083E1BC 77136CD0B Replies: 01083E05D 771361E44 Distance: 1.72<\r><\n>
+Rounds: 01066A02C FFFFFF1DED0D2ED6 Replies: 0FEEB33E 7715265D4 Distance: 1290603.90<\r><\n>
+Rounds: 0F77BF83 1DEFCD98F8 Replies: 010669EC4 77242407D Distance: 715270.26<\r><\n>
+Rounds: 0FD17443 1DED06DB9F Replies: 0F77BDFE 771E88BBD Distance: 751831.44<\r><\n>
+Rounds: 011538D82 1DED31D49B Replies: 0FD17313 77066727E Distance: 841258.35<\r><\n>
+Rounds: 0102A2BF7 1DECF55116 Replies: 011538C4D 7718FD409 Distance: 744457.38<\r><\n>
+Rounds: 0115487A8 1DEFB68DA3 Replies: 0102A2B8B 770657858 Distance: 836196.10<\r><\n>
+Rounds: 0F950016 1DEACBAE06 Replies: 011548715 77224FFEA Distance: 707606.01<\r><\n>
+Rounds: 0125FADC3 1DEE3CA001 Replies: 0F94FFE5 76F5A523D Distance: 910941.22<\r><\n>
+Rounds: 01083E1CB 1DE858D77A Replies: 0125FADEF 771361E35 Distance: 749810.12<\r><\n>
+Rounds: 010BE62D1 1DECEB3738 Replies: 01083DF72 770FB9D2F Distance: 793628.91<\r><\n>
+Rounds: 0F95FE70 1DEE274C4F Replies: 010BE6048 772240190 Distance: 717238.61<\r><\n>
+Rounds: 011548C5C 1DEE1D5E89 Replies: 0F95F7DA FFFFFF07706573A4 Distance: -1226465.24<\r><\n>
+Rounds: 0FEEB92D FFFFFF1DEA9B27F7 Replies: 011548585 771CA4CD3 Distance: 1253747.46<\r><\n>
+Rounds: 0FD17875 1DEE3113B2 Replies: 0FEEB21C 771E78D8B Distance: 744600.28<\r><\n>
+Rounds: 0118F0FB1 1DEBFD9770 Replies: 0FD17184 7702AF04F Distance: 855822.71<\r><\n>
+Rounds: 0F9507F5 346086D455 Replies: 0118F0723 77224F80B Distance: 899638.54<\r><\n>
+Rounds: 0FB33F81 1DEE7ADD1A Replies: 0F94FF87 77206C07F Distance: 742685.42<\r><\n>
+Rounds: 013305951 346555967D Replies: 0FB338B4 76E88ACAF Distance: 1166297.23<\r><\n>
+Rounds: 010F9E02B 3460B56AEC Replies: 0133052C1 770C01FD5 Distance: 979574.58<\r><\n>
+Rounds: 0129B2CF1 1DEE48927F Replies: 010F9D98B 76F1ED30F Distance: 903693.70<\r><\n>
+Rounds: 0F950558 FFFFFF1DECE20FE9 Replies: 0129B263C 77224FAA8 Distance: 1226174.06
+
+
+
+
+
+
+
+
+
+//round one is messed up, but only slightly compared to round 2
+
+Cycle 1: 0118FFF99 014D0A786 Cycle 2: 346D077D90 770290667 Diffs: FFFFFFFFFCBF5813 2CFCDE7729 Distance: 1004264.90<\r>
+
+
+Cycle 1: 012D6A170 012D6A0F1 	Cycle 2: 76EE2EA47 76EE26490 		Diffs: 07F 085B7 			Round 2 values: 8A4DF5F401 91BCD8DE48 	Distance: 1.08<\r><\n>
+Cycle 1: 013E2C109 013E2C096 	Cycle 2: 76DD7C43E 76DD73EF7 		Diffs: 073 08547 			Round 2 values: A0D0699001 A83E41543F 	Distance: 1.09<\r><\n>
+Cycle 1: 011AD4040 011AD3F81 	Cycle 2: 7700D44B9 7700CBFC0 		Diffs: 0BF 084F9 			Round 2 values: B74DD97001 BEBDE6B4BA 	Distance: 1.18<\r><\n>
+Cycle 1: 013890DAD 0132F59B2 	Cycle 2: 1DEE027EC8 76E2FF853 		Diffs: 059B3FB 167FD28675 		Round 2 values: CDCFE28E01 EBBDE50CC9 	Distance: 927509.20<\r><\n>
+Cycle 1: 01459B480 013890D18 	Cycle 2: FFFFFF1DED9EEC0E 76D5F5180 	Diffs: 0D0A768 FFFFFF16803F9A8E 	Round 2 values: E44FB49001 23D537C0F 	Distance: 1709233.21<\r><\n>
+Cycle 1: 0127DE765 013A747F8 	Cycle 2: 1DEE6BB657 76F3C189B 		Diffs: FFFFFFFFFED69F6D 167F2F9DBC 	Round 2 values: 27CCD33201 45BB3EE858 	Distance: 854500.91<\r><\n>
+Cycle 1: 011AD4137 0127DE6BE 	Cycle 2: 1DED6E36D0 7700CBEC9 		Diffs: FFFFFFFFFF2F5A79 167D617807 	Round 2 values: 3E4C024801 5C39707ED1 	Distance: 821362.21<\r><\n>
+Cycle 1: 011364D07 011AD407C 	Cycle 2: 1DEF5F8A4C 77083B2F9 		Diffs: FFFFFFFFFF890C8B 167EDBD753 	Round 2 values: 54C9633A01 72B8C2C44D 	Distance: 805016.70
+
+
+
+
+error happens when we get two or more responses for the same mac in our queue (it uses the old one to reply with)
+so at what point do we ever add a packet without marking the old one for deletion?
+
+(we added a guard to check for old packets. That solved this first issue)
+
+
+
+Cycle 1: 0136BCFCD 0136BCDD8 	Cycle 2: 76E4EB219 76E4E3033 		Diffs: 01F5 081E6 	Round 2 values: 1CA90A8E01 241759401A 1 Distance: 1.95<\r><\n>
+Cycle 1: 011CA812F 011CA7F00 	Cycle 2: 76FF00078 76FEF7ED1 		Diffs: 022F 081A7 	Round 2 values: 3327644C01 3A97544C79 1 Distance: 2.02<\r><\n>
+Cycle 1: 0FB43403 0FB431C6 	Cycle 2: 772055385 FFFFFF077204D1FD 	Diffs: 023D 1008188 	Round 2 values: 49A3D0DE01 5115D63186 1 Distance: -1312744.20
+
+
+
+note: we have an issue where we occasionally get something like FFFFFF077204D1FD from get_reply_time() (instead of the intended 077204D1FD...)										
+not sure why.
+//we also get these from
+
+Cycle 1: 010476D21 010476C4B Cycle 2: 771732712 7717292DF Diffs: 0D6 09433 Round 2 values: E691C48A01 EE337B113 1 Distance: 1.25<\r><\n>
+Cycle 1: 0134D93AC 0134D9306 Cycle 2: FFFFFF076E6D0088 76E6C6C54 Diffs: 0A6 FFFFFF009434 Round 2 values: FD101FE601 47E8CE689 1 Distance: 1518977.60<\r><\n>
+Cycle 1: 014D0A84D 014D0A7C7 Cycle 2: 76CE8F1B6 76CE85DB3 Diffs: 086 09403 Round 2 values: 2A7A8AC01 3174919DB7 1 Distance: 1.27
+
+The value:
+FFFFFF076E6D0088
+is calculated from:
+radio->get_rx_timestamp_u64() - responses[j].tx_timestamp_radio
+47E8CE689 - FD101FE601
+(the result is an integer underflow, which gives us the 0xFFFFFF. We need to mask the extra bits out)
+the number is a 64 bit int, but the radio only has a 40 bit clock.
+
+
+
+
+
+
+
