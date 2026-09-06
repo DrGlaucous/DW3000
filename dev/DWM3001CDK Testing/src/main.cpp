@@ -34,7 +34,7 @@ This is what comes out of the program before it goes into matlab for the more co
 #define RX_ANT_DELAY 16385
 #define TX_ANT_DELAY 16385
 
-
+DummyStream* dummy = nullptr;
 DWUart* uart = nullptr;
 DW3000Port* port = nullptr;
 DW3000* radio = nullptr;
@@ -241,7 +241,9 @@ void setup()
 
 
 	//set up the backend components and feed them into the main DW3000 class
-	uart = new DWUart(BAUD_RATE);
+	dummy = new DummyStream(); //use this if you want to silence the debug output from the DW3000 library
+	uart = new DWUart(*dummy);
+	//uart = new DWUart(BAUD_RATE);
 	port = new DW3000Port(&SPI, SPI_CS, DW_RST, DW_IRQ);
 	radio = new DW3000(uart, port);
 
