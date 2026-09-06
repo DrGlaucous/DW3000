@@ -40,7 +40,7 @@ DW3000Port* port = nullptr;
 DW3000* radio = nullptr;
 
 //how the radio should be configured for the session.
-static const dwt_config_t config = {
+static const dwt_config_t config_ch5 = {
     5,                		/* Channel number. */
     DWT_PLEN_64,     		/* Preamble length. Used in TX only. */
     DWT_PAC8,         		/* Preamble acquisition chunk size. Used in RX only. */
@@ -56,16 +56,29 @@ static const dwt_config_t config = {
     DWT_PDOA_M0       		/* PDOA mode off */
 };
 
-//I'll keep both of these here for reference.
-dwt_txconfig_t txconfig_ch5 =
-{
+static const dwt_config_t config_ch9 = {
+    9,                		/* Channel number. */
+    DWT_PLEN_64,     		/* Preamble length. Used in TX only. */
+    DWT_PAC8,         		/* Preamble acquisition chunk size. Used in RX only. */
+    9,                		/* TX preamble code. Used in TX only. */
+    9,                		/* RX preamble code. Used in RX only. */
+    1,                		/* 0 to use standard 8 symbol SFD, 1 to use non-standard 8 symbol, 2 for non-standard 16 symbol SFD and 3 for 4z 8 symbol SDF type */
+    DWT_BR_6M8,       		/* Data rate. */
+    DWT_PHRMODE_STD,  		/* PHY header mode. */
+    DWT_PHRRATE_STD,  		/* PHY header rate. */
+    (64 + 1 + 8 - 8),    	/* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
+    DWT_STS_MODE_OFF, 		/* STS disabled */
+    DWT_STS_LEN_64,   		/* STS length see allowed values in Enum dwt_sts_lengths_e */
+    DWT_PDOA_M0       		/* PDOA mode off */
+};
+
+dwt_txconfig_t txconfig_ch5 = {
     0x34,           /* PG delay. */
     0xfdfdfdfd,      /* TX power. */
     0x0             /*PG count*/
 };
 
-dwt_txconfig_t txconfig_ch9 =
-{
+dwt_txconfig_t txconfig_ch9 = {
     0x34,           /* PG delay. */
     0xfefefefe,     /* TX power. */
     0x0             /*PG count*/
@@ -218,7 +231,7 @@ void setup()
 
 	// sets up the device to use the pins on the bottom left of the rPi header for serial communication.
 	Serial = Uart(NRF_UART0, UARTE0_UART0_IRQn, 31, 7);
-	Serial.begin(115200);
+	Serial.begin(BAUD_RATE);
 	Serial.println("Begin");
 
 
@@ -228,7 +241,7 @@ void setup()
 
 
 	//set up the backend components and feed them into the main DW3000 class
-	uart = new DWUart(115200);
+	uart = new DWUart(BAUD_RATE);
 	port = new DW3000Port(&SPI, SPI_CS, DW_RST, DW_IRQ);
 	radio = new DW3000(uart, port);
 
@@ -260,11 +273,26 @@ void setup()
 	radio->gpio_init_output();
 
 
-	while (radio->dwt_configure(&config))
+	while (radio->dwt_configure(&config_ch5))
 	{
 		Serial.println("Config failed");
 		delay(1000);
 	}
+
+	//test: try it a second time
+	bool flip = false;
+	while(1) {
+		Serial.println("Again");
+		radio->dwt_forcetrxoff();
+		while (radio->dwt_configure(flip ? &config_ch5 : &config_ch9))
+		{
+			Serial.println("Config failed");
+			delay(1000);
+		}
+		flip = !flip;
+		delay(1000);
+	}
+
 	
 	//reset radio state: not doing this here results in a ~17s delay from the internal 40 bit sys timer
 	//if we do a soft reset, we don't need to do this.
@@ -297,205 +325,9 @@ void setup()
 
 }
 
-//initiator, does not do the final calculations
-//loop_ds_init
-void loop_ds_init() {
 
-
-	//start with clean slate
-	radio->clear_system_status();
-	radio->dwt_writefastCMD(CMD_TXRXOFF);
-
-	//make starting packet to send (doesn't have to be a TWR packet to start with, but I'll do it anyway out of convention)
-	RangingPacket request_frame = RangingPacket(0, 0, RangingFrameNum::Request);
-	UWBPacket packet = UWBPacket(get_uuid(), UWBPacket::BROADCAST_MAC, PacketType::Ranging, request_frame.get_compiled(), request_frame.get_compiled_len());
-
-
-
-
-	if(!send_packet(packet, DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED)) {
-		//failed to send, restart loop
-		Serial.println("Failed to send initial packet.");
-		delay(1000);
-		return;
-	}
-
-	//wait for RX
-	auto rx_status = wait_for_message_with_timeout(1000);
-	if(rx_status) {
-		Serial.print("RX Error: ");
-		Serial.println(rx_status);
-		return;
-	}
-
-
-	//parse the packet to get the timestamps from the other radio
-	UWBPacket response_packet = get_packet();
-
-	//timestamp when the initial packet was sent by us
-	uint64_t initial_tx_timestamp = radio->get_tx_timestamp_u64();
-
-	//timestamp when the response was got by us
-	uint64_t rx_timestamp = radio->get_rx_timestamp_u64();
-
-	//full round trip 
-	uint64_t round_1_time = rx_timestamp - initial_tx_timestamp;
-	
-
-	//calculate and populate outgoing time (see above for a breakdown)
-	uint32_t turnaround_time_us = 1000;
-	uint64_t tx_timestamp = ((turnaround_time_us * UUS_TO_DWT_TIME + rx_timestamp) >> 8) & 0xFFFFFFFEUL;
-	radio->dwt_setdelayedtrxtime((uint32_t)tx_timestamp);
-	tx_timestamp = (tx_timestamp << 8) + TX_ANT_DELAY;
-	uint64_t reply_2_time = tx_timestamp - rx_timestamp;
-
-	//write packet
-	RangingPacket range_p = RangingPacket(reply_2_time, round_1_time, RangingFrameNum::Final);
-	UWBPacket outgoing = UWBPacket(get_uuid(), UWBPacket::BROADCAST_MAC, PacketType::Ranging, range_p.get_compiled(), range_p.get_compiled_len());
-
-	//send with delay
-	if (!send_packet(outgoing, DWT_START_TX_DELAYED)) {
-		Serial.println("Send result not successful");
-		return;
-	}
-
-	Serial.println("Sent ranging response");
-
-
-	//debug: flip LED
-	flip = !flip;
-	radio->gpio_set(2, flip);
-	radio->gpio_set(3, !flip);
-
-	delay(200);
-
-
-
-
-}
-
-//responder, makes the final calculations
-//loop_ds_resp
 void loop() {
 
-	//clean slate
-	radio->clear_system_status();
-	radio->dwt_writefastCMD(CMD_TXRXOFF);
-
-	//start listening
-	radio->dwt_rxenable(DWT_START_RX_IMMEDIATE);
-
-	//wait for initial message
-	int result = wait_for_message_with_timeout(0, true);
-
-	//failed to properly get packet
-	if(result) {
-		Serial.print("Error getting packet: ");
-		Serial.println(result);
-		return;
-	}
-
-
-	//we don't need to parse the packet, but if we did, that happens here.
-
-
-	//the time we got the packet
-	auto rx_timestamp = radio->get_rx_timestamp_u64();
-	//calculate and populate outgoing time (see above for a breakdown)
-	uint32_t turnaround_time_us = 1000;
-	uint64_t tx_timestamp = ((turnaround_time_us * UUS_TO_DWT_TIME + rx_timestamp) >> 8) & 0xFFFFFFFEUL;
-	radio->dwt_setdelayedtrxtime((uint32_t)tx_timestamp);
-	tx_timestamp = (tx_timestamp << 8) + TX_ANT_DELAY;
-	uint64_t reply_1_time = tx_timestamp - rx_timestamp;
-
-
-	//write packet (content does not matter; the other radio will keep track of its own times)
-	{
-		auto payload = RangingPacket(0, 0, RangingFrameNum::Response);
-		UWBPacket packet = UWBPacket(
-			get_uuid(), //this device's mac
-			UWBPacket::BROADCAST_MAC,
-			PacketType::Ranging,
-			payload.get_compiled(),
-			payload.get_compiled_len()
-		);
-
-		if(!send_packet(packet, DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED)) {
-			Serial.println("Send result not successful");
-			return;
-		}
-
-	}
-
-	//Serial.println("Got initial packet and sent response.");
-	radio->clear_system_status();
-
-
-	//wait for RX
-	auto rx_status = wait_for_message_with_timeout(1000);
-	if(rx_status) {
-		Serial.print("RX Error: ");
-		Serial.println(rx_status);
-		return;
-	}
-
-
-	//parse the packet to get the timestamps from the other radio
-	UWBPacket response_packet = get_packet();
-
-
-	switch(response_packet.get_packet_type()) {
-		case PacketType::Ranging: {
-
-			auto ranging_data = RangingPacket(response_packet.get_payload());
-
-			//is the final frame, we can calculate distance with this.
-			if(ranging_data.get_frame_no() == RangingFrameNum::Final) {
-				uint64_t round_2_time = radio->get_rx_timestamp_u64() - tx_timestamp;
-
-
-				uint64_t round_1_time = ranging_data.get_round_time();
-				uint64_t reply_2_time = ranging_data.get_reply_time();
-
-				//see page 249
-				double top_val = ((double)round_1_time * (double)round_2_time) - ((double)reply_1_time * (double)reply_2_time);
-				double bottom_val = ((double)round_1_time + (double)round_2_time + (double)reply_1_time + (double)reply_2_time);
-
-				double time_of_flight = ((double)top_val)/((double)bottom_val);
-				double distance = time_of_flight * SPEED_OF_LIGHT * DWT_TIME_UNITS;
-
-				// Serial.print("Rounds: ");
-				// print_u64(round_1_time, HEX);
-				// Serial.print(" ");
-				// print_u64(round_2_time, HEX);
-				// Serial.print(" Replies: ");
-				// print_u64(reply_1_time, HEX);
-				// Serial.print(" ");
-				// print_u64(reply_2_time, HEX);
-				// Serial.print(" ");
-
-				Serial.print("Distance: ");		
-				Serial.println(distance);
-			}
-
-
-			break;
-		}
-		default: {
-			Serial.print("Wrong RX Packet type. Expected Ranging packet ");
-			Serial.println(response_packet.get_packet_type());
-
-			if(response_packet.get_packet_type() == 0) {
-				//debug: flip LED
-				flip = !flip;
-				radio->gpio_set(2, flip);
-				radio->gpio_set(3, !flip);
-			}
-
-			return;
-		}
-	}
-
+	
 
 }
-

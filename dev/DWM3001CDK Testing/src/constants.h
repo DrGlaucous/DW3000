@@ -1,5 +1,7 @@
 #pragma once
 
+//115200
+#define BAUD_RATE 460800
 
 
 //the pins on the NRF chip are scrambled because the arduino backend expects this chip to be on a different devboard,

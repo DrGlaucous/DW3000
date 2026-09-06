@@ -746,9 +746,16 @@ void DW3000::dwt_setdwstate(uint8_t state)
 	if (state == DWT_DW_IDLE) // Set the auto INIT2IDLE bit so that DW3000 enters IDLE mode before switching clocks to system_PLL
 	// NOTE: PLL should be configured prior to this, and the device should be in IDLE_RC (if the PLL does not lock device will remain in IDLE_RC)
 	{
+		//according to page 164 in the user manual, at least CAL_EN should be set before SEQ_CTRL_AINIT2IDLE_BIT_MASK
+		//PLL_CAL bit 8 = CAL_EN
+		//PLL_CAL bit 1 = USE_OLD
+		dwt_modify16bitoffsetreg(PLL_CAL_ID, 0,(uint16_t)~(PLL_CAL_CAL_EN_BIT_MASK | PLL_CAL_USE_OLD_BIT_MASK), (PLL_CAL_CAL_EN_BIT_MASK | PLL_CAL_USE_OLD_BIT_MASK));
+
 		// switch clock to auto - if coming here from INIT_RC the clock will be FOSC/4, need to switch to auto prior to setting auto INIT2IDLE bit
 		dwt_force_clocks(FORCE_CLK_AUTO);
 		dwt_or8bitoffsetreg(SEQ_CTRL_ID, 0x01, SEQ_CTRL_AINIT2IDLE_BIT_MASK >> 8);
+
+
 	}
 	else if (state == DWT_DW_IDLE_RC) // Change state to IDLE_RC and clear auto INIT2IDLE bit
 	{
@@ -1251,8 +1258,15 @@ int DW3000::dwt_configure(const dwt_config_t *config)
 	// SYS_CFG
 	// clear the PHR Mode, PHR Rate, STS Protocol, SDC, PDOA Mode,
 	// then set the relevant bits according to configuration of the PHR Mode, PHR Rate, STS Protocol, SDC, PDOA Mode,
-	dwt_modify32bitoffsetreg(SYS_CFG_ID, 0, ~(SYS_CFG_PHR_MODE_BIT_MASK | SYS_CFG_PHR_6M8_BIT_MASK | SYS_CFG_CP_SPC_BIT_MASK | SYS_CFG_PDOA_MODE_BIT_MASK | SYS_CFG_CP_SDC_BIT_MASK),
-							 ((uint32_t)config->pdoaMode) << SYS_CFG_PDOA_MODE_BIT_OFFSET | ((uint16_t)config->stsMode & DWT_STS_CONFIG_MASK) << SYS_CFG_CP_SPC_BIT_OFFSET | (SYS_CFG_PHR_6M8_BIT_MASK & ((uint32_t)config->phrRate << SYS_CFG_PHR_6M8_BIT_OFFSET)) | mode);
+	dwt_modify32bitoffsetreg(SYS_CFG_ID, 0, ~(SYS_CFG_PHR_MODE_BIT_MASK	|
+											  SYS_CFG_PHR_6M8_BIT_MASK	|
+											  SYS_CFG_CP_SPC_BIT_MASK	|
+											  SYS_CFG_PDOA_MODE_BIT_MASK|
+											  SYS_CFG_CP_SDC_BIT_MASK),
+		((uint32_t)config->pdoaMode) << SYS_CFG_PDOA_MODE_BIT_OFFSET
+		| ((uint16_t)config->stsMode & DWT_STS_CONFIG_MASK) << SYS_CFG_CP_SPC_BIT_OFFSET
+		| (SYS_CFG_PHR_6M8_BIT_MASK & ((uint32_t)config->phrRate << SYS_CFG_PHR_6M8_BIT_OFFSET))
+		| mode);
 
 	if (scp)
 	{

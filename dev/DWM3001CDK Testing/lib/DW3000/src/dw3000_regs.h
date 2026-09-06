@@ -1776,7 +1776,12 @@
 #define PLL_CAL_ID                           0x90008              
 #define PLL_CAL_LEN                          (4U)                
 #define PLL_CAL_MASK                         0xFFFFFFFFUL        
-
+#define PLL_CAL_CAL_EN_BIT_OFFSET            (8U)
+#define PLL_CAL_CAL_EN_BIT_LEN               (1U)
+#define PLL_CAL_CAL_EN_BIT_MASK              0x100UL
+#define PLL_CAL_USE_OLD_BIT_OFFSET           (1U)
+#define PLL_CAL_USE_OLD_BIT_LEN              (1U)
+#define PLL_CAL_USE_OLD_BIT_MASK             0x2UL
 
 
 /******************************************************************************

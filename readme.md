@@ -1,6 +1,6 @@
 # DW3000 Arduino library
 
-A modular DW3000 library based on the original [work done by Makerfabs](https://github.com/Makerfabs/Makerfabs-ESP32-UWB-DW3000).
+A modular DW3000 library based on the original [work done by Makerfabs et al.](https://github.com/Makerfabs/Makerfabs-ESP32-UWB-DW3000).
 
 ## What is this fork?
 
@@ -26,6 +26,16 @@ The pins that connect to the DW3000 are as follows (these can also be found in t
 #define DW_IRQ 32 + 2
 #define DW_WUP 32 + 19
 ```
+
+## Useful references
+
+The DW3000 "missing manual" notes:
+https://gist.github.com/egnor/455d510e11c22deafdec14b09da5bf54
+
+Various other implementations of the DW3000 drivers
+https://github.com/br101/dw3000-decadriver-source/tree/master
+https://github.com/br101/zephyr-dw3000-examples
+
 
 
 
