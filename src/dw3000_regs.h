@@ -1497,24 +1497,30 @@
 /******************************************************************************
 * @brief Bit definitions for register RF_ENABLE
 **/
-#define RF_ENABLE_ID                            0x70000              
-#define RF_ENABLE_LEN                           (4U)                
-#define RF_ENABLE_MASK                          0xFFFFFFFFUL        
-#define RF_ENABLE_TX_SW_EN_BIT_OFFSET           (25U)               
-#define RF_ENABLE_TX_SW_EN_BIT_LEN              (1U)                
-#define RF_ENABLE_TX_SW_EN_BIT_MASK             0x2000000UL          
-#define RF_ENABLE_TX_CH5_BIT_OFFSET             (13U)               
-#define RF_ENABLE_TX_CH5_BIT_LEN                (1U)                
-#define RF_ENABLE_TX_CH5_BIT_MASK               0x2000U              
-#define RF_ENABLE_TX_EN_BIT_OFFSET              (12U)               
-#define RF_ENABLE_TX_EN_BIT_LEN                 (1U)                
-#define RF_ENABLE_TX_EN_BIT_MASK                0x1000U              
-#define RF_ENABLE_TX_EN_BUF_BIT_OFFSET          (11U)               
-#define RF_ENABLE_TX_EN_BUF_BIT_LEN             (1U)                
-#define RF_ENABLE_TX_EN_BUF_BIT_MASK            0x800U               
-#define RF_ENABLE_TX_BIAS_EN_BIT_OFFSET         (10U)               
-#define RF_ENABLE_TX_BIAS_EN_BIT_LEN            (1U)                
-#define RF_ENABLE_TX_BIAS_EN_BIT_MASK           0x400U               
+#define RF_ENABLE_ID                        0x70000UL
+#define RF_ENABLE_LEN                       (4U)
+#define RF_ENABLE_MASK                      0xFFFFFFFFUL
+#define RF_ENABLE_PLL_RX_PRE_EN_BIT_OFFSET  (27U)
+#define RF_ENABLE_PLL_RX_PRE_EN_BIT_LEN     (1U)
+#define RF_ENABLE_PLL_RX_PRE_EN_BIT_MASK    0x8000000UL
+#define RF_ENABLE_PLL_TX_PRE_EN_BIT_OFFSET  (26U)
+#define RF_ENABLE_PLL_TX_PRE_EN_BIT_LEN     (1U)
+#define RF_ENABLE_PLL_TX_PRE_EN_BIT_MASK    0x4000000UL
+#define RF_ENABLE_TX_SW_EN_BIT_OFFSET       (25U)
+#define RF_ENABLE_TX_SW_EN_BIT_LEN          (1U)
+#define RF_ENABLE_TX_SW_EN_BIT_MASK         0x2000000UL
+#define RF_ENABLE_TX_CH5_BIT_OFFSET         (13U)
+#define RF_ENABLE_TX_CH5_BIT_LEN            (1U)
+#define RF_ENABLE_TX_CH5_BIT_MASK           0x2000U
+#define RF_ENABLE_TX_EN_BIT_OFFSET          (12U)
+#define RF_ENABLE_TX_EN_BIT_LEN             (1U)
+#define RF_ENABLE_TX_EN_BIT_MASK            0x1000U
+#define RF_ENABLE_TX_EN_BUF_BIT_OFFSET      (11U)
+#define RF_ENABLE_TX_EN_BUF_BIT_LEN         (1U)
+#define RF_ENABLE_TX_EN_BUF_BIT_MASK        0x800U
+#define RF_ENABLE_TX_BIAS_EN_BIT_OFFSET     (10U)
+#define RF_ENABLE_TX_BIAS_EN_BIT_LEN        (1U)
+#define RF_ENABLE_TX_BIAS_EN_BIT_MASK       0x400U
 
 /******************************************************************************
 * @brief Bit definitions for register RF_CTRL_MASK

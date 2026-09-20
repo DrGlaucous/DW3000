@@ -22,9 +22,16 @@
 
 #define DWT_BIT_MASK(bit_num) (((uint32_t)1) << (bit_num))
 
-/* */
-#define DWT_SUCCESS (0)
-#define DWT_ERROR (-1)
+/* General API error codes, pulled from one of the newer APIs, they were converted to enums there. */
+#define DWT_SUCCESS (0)            //!< No error
+#define DWT_ERROR (-1)             //!< Error
+#define DWT_ERR_PLL_LOCK (-2)      //!< PLL lock error / PLL configuration/calibration failed
+#define DWT_ERR_RX_CAL_PGF (-3)    //!< PGF calibration failed
+#define DWT_ERR_RX_CAL_RESI (-4)   //!< RX clibration failed
+#define DWT_ERR_RX_CAL_RESQ (-5)   //!< RX clibration failed
+#define DWT_ERR_RX_ADC_CAL  (-6)   //!< ADC clibration failed
+#define DWT_ERR_WRONG_STATE (-9)   //!< TSE is not in IDLE, need to call dwt_forcetrxoff() first to place TSE in IDLE
+
 
 #define DWT_TIME_UNITS (1.0 / 499.2e6 / 128.0) //!< = 15.65e-12 s
 
@@ -334,6 +341,14 @@ typedef void (*dwt_cb_t)(const dwt_cb_data_t *);
 #define SHIFT_VALUE 11
 #define MOD_VALUE 2048
 #define HALF_MOD (MOD_VALUE >> 1)
+
+/*Enums for setting DW3xxx/QM33xxx RX/TX PLL Pre-Buffers Enable Configuration*/
+typedef enum
+{   
+	DWT_PLL_RX_PREBUF_DISABLE = 0,  //!< Disable the DW RX PLL Pre-Buffers
+	DWT_PLL_RX_PREBUF_ENABLE,       //!< Enable the DW RX PLL Pre-Buffers
+} dwt_pll_prebuf_cfg_e;
+
 
 /*This Enum holds INT working options.*/
 typedef enum
@@ -687,29 +702,30 @@ class DW3000
 	// Structure to hold the device data
 
 	// pulled from localdata struct in the cpp file
-	uint32_t partID;		   // IC Part ID - read during initialisation
-	uint32_t lotID;			   // IC Lot ID - read during initialisation
-	uint8_t bias_tune;		   // bias tune code
-	uint8_t dgc_otp_set;	   // Flag to check if DGC values are programmed in OTP
-	uint8_t vBatP;			   // IC V bat read during production and stored in OTP (Vmeas @ 3V3)
-	uint8_t tempP;			   // IC temp read during production and stored in OTP (Tmeas @ 23C)
-	uint8_t longFrames;		   // Flag in non-standard long frame mode
-	uint8_t otprev;			   // OTP revision number (read during initialisation)
-	uint8_t init_xtrim;		   // initial XTAL trim value read from OTP (or defaulted to mid-range if OTP not programmed)
-	uint8_t dblbuffon;		   // Double RX buffer mode and DB status flag
-	uint16_t sleep_mode;	   // Used for automatic reloading of LDO tune and microcode at wake-up
-	uint16_t ststhreshold;	   // Threshold for deciding if received STS is good or bad
-	dwt_spi_crc_mode_e spicrc; // Use SPI CRC when this flag is true
-	uint8_t stsconfig;		   // STS configuration mode
-	uint8_t cia_diagnostic;	   // CIA dignostic logging level
-	dwt_cb_data_t cbData;	   // Callback data structure
-	dwt_spierrcb_t cbSPIRDErr; // Callback for SPI read error events
-	dwt_cb_t cbTxDone;		   // Callback for TX confirmation event
-	dwt_cb_t cbRxOk;		   // Callback for RX good frame event
-	dwt_cb_t cbRxTo;		   // Callback for RX timeout events
-	dwt_cb_t cbRxErr;		   // Callback for RX error events
-	dwt_cb_t cbSPIErr;		   // Callback for SPI error events
-	dwt_cb_t cbSPIRdy;		   // Callback for SPI ready events
+	uint32_t partID;		   				// IC Part ID - read during initialisation
+	uint32_t lotID;			   				// IC Lot ID - read during initialisation
+	uint8_t bias_tune;		   				// bias tune code
+	uint8_t dgc_otp_set;	   				// Flag to check if DGC values are programmed in OTP
+	uint8_t vBatP;			   				// IC V bat read during production and stored in OTP (Vmeas @ 3V3)
+	uint8_t tempP;			   				// IC temp read during production and stored in OTP (Tmeas @ 23C)
+	uint8_t longFrames;		   				// Flag in non-standard long frame mode
+	uint8_t otprev;			   				// OTP revision number (read during initialisation)
+	uint8_t init_xtrim;		   				// initial XTAL trim value read from OTP (or defaulted to mid-range if OTP not programmed)
+	uint8_t dblbuffon;		   				// Double RX buffer mode and DB status flag
+	uint16_t sleep_mode;	   				// Used for automatic reloading of LDO tune and microcode at wake-up
+	uint16_t ststhreshold;	   				// Threshold for deciding if received STS is good or bad
+	dwt_spi_crc_mode_e spicrc; 				// Use SPI CRC when this flag is true
+	uint8_t stsconfig;		   				// STS configuration mode
+	uint8_t cia_diagnostic;	   				// CIA dignostic logging level
+	dwt_cb_data_t cbData;	   				// Callback data structure
+	dwt_spierrcb_t cbSPIRDErr; 				// Callback for SPI read error events
+	dwt_cb_t cbTxDone;		   				// Callback for TX confirmation event
+	dwt_cb_t cbRxOk;		   				// Callback for RX good frame event
+	dwt_cb_t cbRxTo;		   				// Callback for RX timeout events
+	dwt_cb_t cbRxErr;		   				// Callback for RX error events
+	dwt_cb_t cbSPIErr;		   				// Callback for SPI error events
+	dwt_cb_t cbSPIRdy;		   				// Callback for SPI ready events
+	dwt_pll_prebuf_cfg_e pll_rx_prebuf_cfg; // PLL RX prebuf configuration
 
 	DW3000 *pdw3000local = this;
 
@@ -1783,6 +1799,42 @@ public:
 	 */
 	void dwt_readrxdata(uint8_t *buffer, uint16_t length, uint16_t rxBufferOffset);
 
+	/*!------------------------------------------------------------------------------------------------------------------
+	* @brief This function enables/disables the PLL RX prebuffer (when the PLL is active)
+	*
+	* @note To enable the RX Pre-buffers, this function should be called when the device is in 
+	* IDLE_RC mode, before calibrating the PLL. To disable the RX Pre-buffers, the PLL should be
+	* re-calibrate after, if no other parameters have been changed.
+	* 
+	* @note Enabling the RX PLL Pre-buffers is recommended when using two standalone ICs to perform
+	* PDoA, it will mitigate any phase ambiguity that may be observed, particularly in channel 5.
+	* This is not required and not recommended when calculating PDoA with a single IC
+	* (standard PDoA usage with QM33 or DW3000, PDoA mode 3 or PDoA mode 5), to avoid an increase
+	* in power consumption.
+	*
+	* @param[in] dw: DW3000 chip descriptor handler.
+	* @param[in] pll_rx_prebuf_cfg: New "PLL RX Prebuffer Enable" Configuration.
+	*    DWT_PLL_RX_PREBUF_DISABLE - Disable the DW RX PLL Pre-Buffers
+	*    DWT_PLL_RX_PREBUF_ENABLE - Enable the DW RX PLL Pre-Buffers   
+	*
+	* @return @ref DWT_SUCCESS for success, or @ref DWT_ERROR for error
+	*/
+	int dwt_setpllrxprebufen(dwt_pll_prebuf_cfg_e pll_rx_prebuf_cfg);
+
+	/*! ------------------------------------------------------------------------------------------------------------------
+	* @brief This is used to write the data to the scratch buffer, to an offset location given by offset parameter.
+	* The scratch buffer size is 128 bytes. The buffer can be used by the AES engine depending on the configuration of
+	* destination and source ports:  @ref dwt_aes_src_port_e and @ref dwt_aes_dst_port_e
+	*
+	* @param[in] dw: DW3000 chip descriptor handler.
+	* @param[in] buffer: Pointer to the buffer which contains the data to write to the device
+	* @param[in] length: The length of data to write (in bytes)
+	* @param[in] bufferOffset: The offset in the scratch buffer to which to write the data
+	*
+	* @return  None
+	*/
+	void dwt_write_scratch_data(uint8_t *buffer, uint16_t length, uint16_t bufferOffset);
+
 	/*! ------------------------------------------------------------------------------------------------------------------
 	 * @brief This is used to read the data from the RX scratch buffer, from an offset location given by offset parameter.
 	 *
@@ -2653,7 +2705,7 @@ public:
 	}
 
 
-	//check for gotten frame, returns 0 on nothing, 1 on success, 2 on bad checksum, 3 on error
+	//check for gotten frame, returns 0 on nothing, 1 on success, 2 on bad checksum, 3 on error, 4 on timeout
 	int check_for_rx() {
 
 		//get current status
@@ -2671,6 +2723,10 @@ public:
 		else if ((sys_stat & SYS_STATUS_ALL_RX_ERR) > 0) {
 			return 3;
 		}
+		//got timeout
+        else if ((sys_stat & SYS_STATUS_ALL_RX_TO) > 0) {
+            return 4;
+        }
 		return 0;
 
 		//in checking for RX errors, the simple library used:

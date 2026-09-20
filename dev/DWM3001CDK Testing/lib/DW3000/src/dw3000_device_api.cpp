@@ -1681,6 +1681,71 @@ void DW3000::dwt_setplenfine(uint8_t preambleLength)
 	dwt_write8bitoffsetreg(TX_FCTRL_HI_ID, 1, preambleLength);
 }
 
+/*!------------------------------------------------------------------------------------------------------------------
+ * @brief This function enables/disables the PLL RX prebuffer (when the PLL is active)
+ *
+ * @note To enable the RX Pre-buffers, this function should be called when the device is in 
+ * IDLE_RC mode, before calibrating the PLL. To disable the RX Pre-buffers, the PLL should be
+ * re-calibrate after, if no other parameters have been changed.
+ * 
+ * @note Enabling the RX PLL Pre-buffers is recommended when using two standalone ICs to perform
+ * PDoA, it will mitigate any phase ambiguity that may be observed, particularly in channel 5.
+ * This is not required and not recommended when calculating PDoA with a single IC
+ * (standard PDoA usage with QM33 or DW3000, PDoA mode 3 or PDoA mode 5), to avoid an increase
+ * in power consumption.
+ *
+ * @param[in] dw: DW3000 chip descriptor handler.
+ * @param[in] pll_rx_prebuf_cfg: New "PLL RX Prebuffer Enable" Configuration.
+ *    DWT_PLL_RX_PREBUF_DISABLE - Disable the DW RX PLL Pre-Buffers
+ *    DWT_PLL_RX_PREBUF_ENABLE - Enable the DW RX PLL Pre-Buffers   
+ *
+ * @return @ref DWT_SUCCESS for success, or @ref DWT_ERROR for error
+ */
+int DW3000::dwt_setpllrxprebufen(dwt_pll_prebuf_cfg_e pll_rx_prebuf_cfg)
+{
+    int retVal = DWT_SUCCESS;
+    uint32_t enable_mask = 0UL;
+
+    if ((pll_rx_prebuf_cfg != DWT_PLL_RX_PREBUF_DISABLE) &&
+        (pll_rx_prebuf_cfg != DWT_PLL_RX_PREBUF_ENABLE))
+    {
+        return (int32_t)DWT_ERROR;
+    }
+
+    if (pll_rx_prebuf_cfg == DWT_PLL_RX_PREBUF_ENABLE)
+    {
+        enable_mask |= (uint32_t)RF_ENABLE_PLL_RX_PRE_EN_BIT_MASK;
+    }
+
+    dwt_and_or8bitoffsetreg(RF_ENABLE_ID, 3,
+                            (uint8_t)(~RF_ENABLE_PLL_RX_PRE_EN_BIT_MASK >> 24), 
+                            (uint8_t)(enable_mask >> 24));
+
+    this->pll_rx_prebuf_cfg = pll_rx_prebuf_cfg;
+
+    return retVal;
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @brief This is used to write the data to the scratch buffer, to an offset location given by offset parameter.
+ * The scratch buffer size is 128 bytes. The buffer can be used by the AES engine depending on the configuration of
+ * destination and source ports:  @ref dwt_aes_src_port_e and @ref dwt_aes_dst_port_e
+ *
+ * @param[in] dw: DW3000 chip descriptor handler.
+ * @param[in] buffer: Pointer to the buffer which contains the data to write to the device
+ * @param[in] length: The length of data to write (in bytes)
+ * @param[in] bufferOffset: The offset in the scratch buffer to which to write the data
+ *
+ * @return  None
+ */
+void DW3000::dwt_write_scratch_data(uint8_t *buffer, uint16_t length, uint16_t bufferOffset)
+{
+    //!!Check later if needs range protection.
+
+    /* Directly write data to the IC buffer */
+    dwt_writetodevice(SCRATCH_RAM_ID, bufferOffset, length, buffer);
+}
+
 /*! ------------------------------------------------------------------------------------------------------------------
  * @brief This is used to read the data from the RX scratch buffer, from an offset location given by offset parameter.
  *
