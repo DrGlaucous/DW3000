@@ -1124,6 +1124,7 @@ void DW3000::dwt_restoreconfig(void)
 {
 	uint8_t channel = 5;
 	uint16_t chan_ctrl;
+	dwt_pll_prebuf_cfg_e pll_rx_prebuf_cfg = this->pll_rx_prebuf_cfg;
 
 	if (pdw3000local->bias_tune != 0)
 	{
@@ -1147,6 +1148,17 @@ void DW3000::dwt_restoreconfig(void)
 		{
 			channel = 9;
 		}
+
+		/* Restore RX/TX Pre-buffers Enable config*/
+        if (pll_rx_prebuf_cfg != DWT_PLL_RX_PREBUF_DISABLE)
+        {
+			//lifted from dwt_restore_txrx, which is a slightly updated version of dwt_restoreconfig.
+            int retVal = dwt_setpllrxprebufen(pll_rx_prebuf_cfg);
+            if(retVal != (int32_t)DWT_SUCCESS)
+            {
+                //return retVal;
+            }
+        }
 
 		/* If the OTP has DGC info programmed into it, do a manual kick from OTP. */
 		if (pdw3000local->dgc_otp_set == DWT_DGC_LOAD_FROM_OTP)
