@@ -1,4 +1,8 @@
 //DSTWR example code
+//three-way calibration code, used to get the rx and tx delay of a single radio.
+//requires 3 radios for the setup
+//see: https://forum.qorvo.com/t/alternative-approach-for-antenna-delay-calibration/16284
+
 
 #include <Arduino.h>
 #include "constants.h"
@@ -9,30 +13,6 @@
 #include "packet.h"
 
 
-/*
-MuLOC / Phase angle paper notes:
-(see: https://github.com/MULoc/MULoc)
-
-
-Looks like the main extra thing that the in-between payload includes is the CIR value from the radio
-
-This is what comes out of the program before it goes into matlab for the more complex calculations
-%data format for an anchor, there are 3 per row, which are the other three anchors
-%[CIR real (signed int)]    [CIR IM (signed int)]    [phase calib]    [rx preamble]    [gain]    [Time-of-flight]    [the ID of the anchor we were talking to]
-%039d,                      0342,                    7f,              1f,              0019,     3534c61dc9,         1
-
-%data format for a tag, there are 4 per row, which are all four other anchors
-%[CIR real (signed int)]    [CIR IM (signed int)]    [phase calib]    [rx preamble]    [gain]    [Time-of-flight]    [carrier frequency offset]    [the ID of the anchor we were talking to]
-%0389,                      f6f9,                    01,              3b,              01a1,     93412952a4,         00000064,                     0
-
-
-
-*/
-
-
-//we need to calibrate the board in order to get these
-#define RX_ANT_DELAY 16385
-#define TX_ANT_DELAY 16385
 
 DummyStream* dummy = nullptr;
 DWUart* uart = nullptr;
@@ -44,8 +24,8 @@ static const dwt_config_t config_ch5 = {
     5,                		/* Channel number. */
     DWT_PLEN_64,     		/* Preamble length. Used in TX only. */
     DWT_PAC8,         		/* Preamble acquisition chunk size. Used in RX only. */
-    9,                		/* TX preamble code. Used in TX only. */
-    9,                		/* RX preamble code. Used in RX only. */
+    10,                		/* TX preamble code. Used in TX only. */
+    10,                		/* RX preamble code. Used in RX only. */
     1,                		/* 0 to use standard 8 symbol SFD, 1 to use non-standard 8 symbol, 2 for non-standard 16 symbol SFD and 3 for 4z 8 symbol SDF type */
     DWT_BR_6M8,       		/* Data rate. */
     DWT_PHRMODE_STD,  		/* PHY header mode. */
@@ -208,24 +188,22 @@ int wait_for_message_with_timeout(uint32_t timeout_ms, bool no_timeout = false) 
 
 }
 
+//set the time at which the next transaction should happen
+//takes the time in microseconds until the next transaction, returns the scheduled timestamp in radio units
+uint64_t set_outgoing_time(uint64_t turnaround_time_micros, uint64_t rx_time_radio) {
+    
+    //convert micros to DWT time and add it to the radio time, then shift it into the delay time register since that one chops off the LSByte
+    uint64_t tx_timestamp = ((turnaround_time_micros * UUS_TO_DWT_TIME + rx_time_radio) >> 8) & 0xFFFFFFFEUL;
+    radio->dwt_setdelayedtrxtime((uint32_t)tx_timestamp);
 
-//a universal collection of timing values
-//to be stored in a vector and eventually transmitted out to all anchors that sent a response initially
-//also held by the anchor for each tag it needs to reply to
-typedef struct ResponderHolder {
-	uint64_t mac; //mac address of the device we got the packet from
-	uint64_t rx_timestamp_radio; //radio timestamp when we got the packet
-
-	//these are only used by the anchor
-	uint64_t tx_timestamp_radio; //radio timestamp when we will send the packet out in the future (used by the anchor only, see tx_timestamp_mcu_micros)
-	uint64_t rx_timestamp_mcu_micros; //microcontroller timestamp when it got the packet (used by the anchor only)
-	uint64_t tx_timestamp_mcu_micros; //microcontroller timestamp when it should send the packet (used by the anchor only)
-	bool sent_reply; //true if we sent the packet back at the time: tx_timestamp_mcu_micros
-} ResponderHolder;
+    //make units the same as radio->get_rx_timestamp_u64
+    return (tx_timestamp << 8) + TX_ANT_DELAY;
+}
 
 
 ////////////////////main methods
 
+//shared over all three radios
 void setup()
 {
 
@@ -281,21 +259,6 @@ void setup()
 		delay(1000);
 	}
 
-	//test: try it a second time
-	bool flip = false;
-	while(1) {
-		Serial.println("Again");
-		radio->dwt_forcetrxoff();
-		while (radio->dwt_configure(flip ? &config_ch5 : &config_ch9))
-		{
-			Serial.println("Config failed");
-			delay(1000);
-		}
-		flip = !flip;
-		delay(1000);
-	}
-
-	
 	//reset radio state: not doing this here results in a ~17s delay from the internal 40 bit sys timer
 	//if we do a soft reset, we don't need to do this.
 	//radio->dwt_writefastCMD(CMD_TXRXOFF);
@@ -304,8 +267,7 @@ void setup()
 	//doing it for an rx-only radio shouldn't hurt.
 	radio->dwt_configuretxrf(&txconfig_ch5);
 	
-	//just some quick-n-dirty pre-calculated values for 64 MHz PRF (pulled from an example file)
-	//these should be calibrated when we make real code
+	//set these to 0 to start with; we'll be calibrating the radios with this code
 	radio->dwt_setrxantennadelay(RX_ANT_DELAY);
 	radio->dwt_settxantennadelay(TX_ANT_DELAY);
 
@@ -328,8 +290,214 @@ void setup()
 }
 
 
+//sender (sends only)
+void loop_0() {
+
+	radio->gpio_set(2, flip);
+	flip = !flip;
+
+	//clean slate
+	radio->clear_system_status();
+	radio->dwt_forcetrxoff();
+
+	//1000 microseconds * 1000, should be 1 second
+    radio->dwt_setrxtimeout(UUS_TO_DWT_TIME * 1000000u);
+	//send packet
+	char* payload = "";
+	auto initial_packet = UWBPacket(get_uuid(), UWBPacket::BROADCAST_MAC, PacketType::UserDefined, (uint8_t*)payload, sizeof(payload));
+
+	send_packet(initial_packet, DWT_START_TX_IMMEDIATE);
+
+	delay(RADIO_0_TX_FREQUENCY_MILLIS);
+
+
+
+}
+
+//radio to be calibrated (gets and sends)
+void loop_1() {
+
+
+
+	//clean slate
+	radio->clear_system_status();
+	radio->dwt_forcetrxoff();
+	
+	//1000 microseconds * 1000, should be 1 second
+    radio->dwt_setrxtimeout(UUS_TO_DWT_TIME * 1000000u);
+
+	//start listening
+	radio->dwt_rxenable(DWT_START_RX_IMMEDIATE);
+
+	//wait for response
+    auto response = 0;
+    do {
+        response = radio->check_for_rx();
+    } while(response == 0);
+
+    //got response
+    if(response == 1) {
+	
+		//send a relayed packet
+		auto outgoing_time = set_outgoing_time(RADIO_TURNAROUND_TIME_MICROS, radio->get_rx_timestamp_u64());
+		auto clock_drift = radio->dwt_readcarrierintegrator();
+
+		//this is not what this is for, but I'm using it anyway since it can do what I want
+		RangingPacket packet = RangingPacket(outgoing_time, clock_drift, RangingFrameNum::Request);
+
+		//format and send packet
+		auto relay_1_p = UWBPacket(get_uuid(), UWBPacket::BROADCAST_MAC, PacketType::UserDefined, packet.get_compiled(), packet.get_compiled_len());
+
+		if(send_packet(relay_1_p, DWT_START_TX_DELAYED))
+		{
+			radio->gpio_set(2, flip);
+			flip = !flip;
+		}
+
+	}
+
+}
+
+
+//used to determine the average error over a number of points
+double rolling_average_count = 0;
+double old_average = 0;
+
+//receiver
+void loop_2() {
+
+	const auto clock_offset_ratio_multiplier_ch5 = FREQ_OFFSET_MULTIPLIER*HERTZ_TO_PPM_MULTIPLIER_CHAN_5/1e6;
+	const auto clock_offset_ratio_multiplier_ch9 = FREQ_OFFSET_MULTIPLIER*HERTZ_TO_PPM_MULTIPLIER_CHAN_9/1e6;
+
+
+
+	//clean slate
+	radio->clear_system_status();
+	radio->dwt_forcetrxoff();
+	
+	//1000 microseconds * 1000, should be 1 second
+    radio->dwt_setrxtimeout(UUS_TO_DWT_TIME * 1000000u);
+
+	//start listening
+	radio->dwt_rxenable(DWT_START_RX_IMMEDIATE);
+
+	//wait for response
+    auto response = 0;
+    do {
+        response = radio->check_for_rx();
+    } while(response == 0);
+
+    //got response
+    if(response == 1) {
+
+		radio->gpio_set(2, flip);
+		flip = !flip;
+	
+		//collect first data
+		auto initial_rx_time = radio->get_rx_timestamp_u64();
+		auto initial_ci = radio->dwt_readcarrierintegrator();
+
+		//listen for the second packet
+		radio->dwt_rxenable(DWT_START_RX_IMMEDIATE);
+		do {
+			response = radio->check_for_rx();
+		} while(response == 0);
+
+
+		if(response == 1) {
+
+			//collect second data
+			auto second_rx_time = radio->get_rx_timestamp_u64();
+			auto second_ci = radio->dwt_readcarrierintegrator();
+
+			//collect first data from other radio
+			auto remote_packet = get_packet();
+			RangingPacket rp = RangingPacket(remote_packet.get_payload());
+			auto remote_rx_time = rp.get_reply_time();
+			int32_t remote_ci = (int32_t)(uint32_t)rp.get_round_time();
+
+			//time-of-arrival difference between when we got the packet from radio 0 and from radio 1
+			uint64_t rx_difference = second_rx_time - initial_rx_time;
+
+			//get the offset ratio between this radio and the second one
+			auto clock_offset_ratio = 1.0 - (clock_offset_ratio_multiplier_ch5 * second_ci);
+
+			
+			//calculate the leftover time after all the ranging has been done.
+			auto leftover_dw_time = rx_difference - (EXPECTED_TOF * 2) - (RADIO_TURNAROUND_TIME_MICROS * UUS_TO_DWT_TIME * clock_offset_ratio);
+
+
+			//perform rolling average with the leftover time
+
+			//protect from outliers
+			if(abs(old_average - leftover_dw_time) < old_average || rolling_average_count < 0.5) {
+				rolling_average_count += 1.0;
+				double new_average = old_average + (leftover_dw_time - old_average) / rolling_average_count;
+				old_average = new_average;
+			}
+
+			//dump to serial (debug: extra data from remotes)
+			if(0) {
+				//the time when we got the inital message
+				print_u64(initial_rx_time, 10);
+				Serial.print(",");
+				Serial.print(initial_ci);
+				Serial.print(",");
+
+				//the time when we got the second message from remote
+				print_u64(second_rx_time, 10);
+				Serial.print(",");
+				Serial.print(second_ci);
+				Serial.print(",");
+
+				//the time when remote got the initial message (as part of remote's packet)
+				print_u64(remote_rx_time, 10);
+				Serial.print(",");
+				Serial.print(remote_ci);
+				Serial.print(",");
+
+				//outlier check
+				print_u64(rx_difference, 16);
+				Serial.print(",");
+			}
+
+			//average total delay
+			Serial.print(leftover_dw_time);
+			Serial.print(",");
+			Serial.print(old_average);
+			Serial.print(",");
+
+			//suggested RX and TX delays
+			Serial.print(old_average * 0.56); //rx
+			Serial.print(",");
+			Serial.print(old_average * 0.44); //tx
+
+			Serial.println("");
+
+
+		
+
+
+
+
+		}
+
+
+
+
+	}
+
+}
+
 void loop() {
 
+#if RADIO_NUM == 0
+	loop_0();
+#elif RADIO_NUM == 1
+	loop_1();
+#else
+	loop_2();
+#endif
 	
 
 }

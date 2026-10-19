@@ -3,6 +3,36 @@
 //115200
 #define BAUD_RATE 460800
 
+//number 0 is the initiator, number 1 is the radio to be calibrated, number 2 is the receiver
+#define RADIO_NUM 2
+
+//the time in microseconds radio number 1 will wait after getting a packet to send it out again
+#define RADIO_TURNAROUND_TIME_MICROS 2000
+
+//the time radio 0 waits between transmitting initiator messages
+#define RADIO_0_TX_FREQUENCY_MILLIS 200
+
+//the spacing all three radios have from each other during the calibration
+#define DISTANCE_METERS 1.016
+
+//the expected time-of-flight in DW units
+#define EXPECTED_TOF (DISTANCE_METERS / (SPEED_OF_LIGHT * DWT_TIME_UNITS))
+
+//if defined, we will be calibrating over frequency channel 9.
+//otherwise, we're calibrating over channel 5.
+#define FREQ_9 false
+
+
+
+//start with these values at 0 to begin with
+
+//we need to calibrate the board in order to get these
+//qorvo says a good rule-of-thumb is 56% for RX, 44% for TX. See page 32 of application note APS312
+//#define RX_ANT_DELAY 17845
+//#define TX_ANT_DELAY 14022
+#define RX_ANT_DELAY 0
+#define TX_ANT_DELAY 0
+
 
 //the pins on the NRF chip are scrambled because the arduino backend expects this chip to be on a different devboard,
 //I'll put the fixed mapping(s) here
