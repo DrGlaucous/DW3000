@@ -66,7 +66,8 @@ DW3000::decaIrqStatus_t DW3000::decamutexon(void)
 #elif defined(ARDUINO_ARCH_NRF5)
 	__disable_irq();
 #else
-	portDISABLE_INTERRUPTS();
+	//portDISABLE_INTERRUPTS();
+	noInterrupts();
 #endif
 	if (s)
 	{
@@ -105,6 +106,7 @@ void DW3000::decamutexoff(decaIrqStatus_t s) // put a function here that re-enab
 #elif defined(ARDUINO_ARCH_NRF5)
 	__disable_irq();
 #else
-	portENABLE_INTERRUPTS();
+	//portENABLE_INTERRUPTS();
+	interrupts();
 #endif
 }
