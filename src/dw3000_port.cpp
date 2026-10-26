@@ -592,13 +592,16 @@ void DW3000Port::port_set_dwic_isr(port_dwic_isr_t dwic_isr)
 #if defined(ARDUINO_ARCH_NRF5)
 	__disable_irq();
 #else
-	portDISABLE_INTERRUPTS();
+	//todo: cross-platform this
+	//portDISABLE_INTERRUPTS();
+	noInterrupts();
 #endif
 	port_dwic_isr = dwic_isr;
 #if defined(ARDUINO_ARCH_NRF5)
 	__enable_irq();
 #else
-	portENABLE_INTERRUPTS();
+	//portENABLE_INTERRUPTS();
+	interrupts();
 #endif
 	/*
 		if (!en)
